@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion Showreel</title>
+<style>
+  :root { --bg: #07070c; --fg: #f4f1ea; --muted: #8a8798; --accent: #ff4d2e; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; overflow: hidden; }
+  #stage { position: absolute; inset: 0; display: grid; place-items: center; }
+  canvas { width: 100vw; height: 56.25vw; max-height: 100vh; max-width: 177.78vh; display: block; }
+  #ui { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; gap: 12px;
+    align-items: center; opacity: 0; transition: opacity .3s; }
+  body:hover #ui, #ui:focus-within { opacity: 1; }
+  #ui button { background: rgba(255,255,255,.1); color: var(--fg); border: 1px solid rgba(255,255,255,.2);
+    border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  #scrub { flex: 1; accent-color: var(--accent); }
+  #tc { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); min-width: 64px; text-align: right; }
+  body.capture #ui { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1920" height="1080"></canvas></div>
+<div id="ui">
+  <button id="play" aria-label="Play or pause">Pause</button>
+  <button id="loop" aria-label="Toggle loop">Loop: on</button>
+  <input id="scrub" type="range" min="0" max="15000" value="0" aria-label="Timeline">
+  <span id="tc">00:00</span>
+</div>
+<script>
+(() => {
+  const W = 1920, H = 1080, DURATION = 15, BPM = 120, BEAT = 60 / BPM;
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+
+  // ---------- palette & helpers ----------
+  const P = { ink: '#07070c', paper: '#f4f1ea', red: '#ff4d2e', blue: '#2e5bff',
+              yellow: '#ffd23f', mint: '#3ee6b0', violet: '#8a5cff' };
+  const SWATCH = [P.red, P.blue, P.yellow, P.mint, P.violet];
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const prog = (t, a, b) => clamp((t - a) / (b - a));
+  const eOutCubic = t => 1 - Math.pow(1 - t, 3);
+  const eInCubic = t => t * t * t;
+  const eInOut = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const eOutExpo = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+  const eInExpo = t => t === 0 ? 0 : Math.pow(2, 10 * t - 10);
+  const eOutBack = t => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+  const TAU = Math.PI * 2;
+  function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  // beat pulse: 1 on the beat, decays quickly
+  const pulse = t => Math.exp(-((t % BEAT) / BEAT) * 6);
+  const font = (w, s) => `${w} ${s}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+
+  // pre-generated deterministic data
+  const r1 = rng(7);
+  const particles = Array.from({ length: 420 }, (_, i) => ({
+    a: r1() * TAU, d: 1100 + r1() * 700, ring: 470 + r1() * 70, spin: (r1() - .5) * 4,
+    s: 1.5 + r1() * 3, c: SWATCH[i % SWATCH.length], delay: r1() * .5 }));
+  const r2 = rng(42);
+  const sphere = Array.from({ length: 700 }, (_, i, arr) => {
+    const k = i + .5, phi = Math.acos(1 - 2 * k / 700), th = Math.PI * (1 + Math.sqrt(5)) * k;
+    return { x: Math.cos(th) * Math.sin(phi), y: Math.cos(phi), z: Math.sin(th) * Math.sin(phi), j: r2() };
+  });
+
+  // ---------- scenes ----------
+  // Scene 1 — particle convergence + title (0.0 – 2.5)
+  function sIntro(t) {
+    ctx.fillStyle = P.ink; ctx.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2;
+    for (const p of particles) {
+      const k = eOutExpo(prog(t, p.delay, p.delay + 1.2));
+      const a = p.a + (1 - k) * p.spin + t * .4;
+      const d = lerp(p.d, p.ring, k) + Math.sin(t * 6 + p.a * 5) * 6 * k;
+      const burst = eInExpo(prog(t, 2.0, 2.5)) * 1400;
+      ctx.globalAlpha = clamp(k * 1.5) * (1 - prog(t, 2.2, 2.5));
+      ctx.fillStyle = p.c;
+      ctx.beginPath(); ctx.arc(cx + Math.cos(a) * (d + burst), cy + Math.sin(a) * (d + burst), p.s, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // letters drop in
+    const word = 'MOTION';
+    ctx.font = font(900, 210); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    const widths = [...word].map(ch => ctx.measureText(ch).width);
+    const total = widths.reduce((a, b) => a + b, 0) + 12 * (word.length - 1);
+    let x = cx - total / 2;
+    [...word].forEach((ch, i) => {
+      const k = eOutBack(prog(t, .6 + i * .07, 1.1 + i * .07));
+      const out = eInCubic(prog(t, 2.05 + i * .03, 2.4 + i * .03));
+      ctx.save();
+      ctx.translate(x + widths[i] / 2, cy - 20 + (1 - k) * -160 + out * 220);
+      ctx.rotate((1 - k) * (i % 2 ? .4 : -.4));
+      ctx.globalAlpha = clamp(k) * (1 - out);
+      ctx.fillStyle = i === 2 ? P.red : P.paper;
+      ctx.fillText(ch, 0, 0);
+      ctx.restore();
+      x += widths[i] + 12;
+    });
+    // underline & subtitle
+    const lk = eInOut(prog(t, 1.1, 1.6)), lo = eInOut(prog(t, 2.0, 2.3));
+    ctx.fillStyle = P.red;
+    ctx.fillRect(cx - 360 * lk + 720 * lo * lk, cy + 110, 720 * lk * (1 - lo), 6);
+    ctx.font = font(500, 34);
+    ctx.globalAlpha = prog(t, 1.25, 1.6) * (1 - prog(t, 2.0, 2.2));
+    ctx.fillStyle = P.paper;
+    spaced('SHOWREEL  ·  2026', cx, cy + 170, lerp(30, 14, eOutCubic(prog(t, 1.25, 2.2))));
+    ctx.globalAlpha = 1;
+  }
+
+  // Scene 2 — shockwave rings + rotating square grid (2.5 – 5.5)
+  function sGeometry(t) {
+    ctx.fillStyle = P.paper; ctx.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2, cols = 11, rows = 6, cell = 150;
+    const ox = cx - (cols - 1) * cell / 2, oy = cy - (rows - 1) * cell / 2;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = ox + c * cell, y = oy + r * cell;
+      const dist = Math.hypot(x - cx, y - cy) / 900;
+      const k = eOutBack(prog(t, .1 + dist * .6, .6 + dist * .6));
+      const out = eInCubic(prog(t, 2.4 + dist * .3, 2.8 + dist * .3));
+      const rot = eInOut(prog((t + dist * .5) % 1, 0, .6)) * Math.PI / 2 + Math.floor(t + dist * .5) * Math.PI / 2;
+      const sz = 88 * k * (1 - out) * (1 + .15 * pulse(t));
+      ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+      const idx = (r + c + Math.floor(t * 2)) % SWATCH.length;
+      ctx.fillStyle = (r + c) % 3 === 0 ? P.ink : SWATCH[idx];
+      if ((r * cols + c) % 4 === 1) { ctx.beginPath(); ctx.arc(0, 0, sz / 2, 0, TAU); ctx.fill(); }
+      else ctx.fillRect(-sz / 2, -sz / 2, sz, sz);
+      ctx.restore();
+    }
+    // shockwave rings on each beat
+    for (let b = 0; b < 6; b++) {
+      const bt = t - b * BEAT;
+      if (bt < 0 || bt > 1.2) continue;
+      const k = eOutCubic(bt / 1.2);
+      ctx.strokeStyle = b % 2 ? P.ink : P.red; ctx.lineWidth = 40 * (1 - k);
+      ctx.beginPath(); ctx.arc(cx, cy, 40 + k * 1100, 0, TAU); ctx.stroke();
+    }
+  }
+
+  // Scene 3 — kinetic typography (5.5 – 8.5)
+  function sType(t) {
+    const words = [
+      { w: 'BOLD', bg: P.red, fg: P.ink },
+      { w: 'FLUID', bg: P.blue, fg: P.paper },
+      { w: 'KINETIC', bg: P.yellow, fg: P.ink } ];
+    const i = Math.min(2, Math.floor(t));
+    const lt = t - i, wd = words[i];
+    ctx.fillStyle = wd.bg; ctx.fillRect(0, 0, W, H);
+    // diagonal stripes drifting
+    ctx.save(); ctx.globalAlpha = .12; ctx.fillStyle = wd.fg;
+    ctx.translate(W / 2, H / 2); ctx.rotate(-.35);
+    for (let s = -14; s < 14; s++) ctx.fillRect(s * 160 + (t * 240) % 160, -1400, 40, 2800);
+    ctx.restore();
+    // giant word with mask reveal from below
+    ctx.save();
+    const size = i === 2 ? 300 : 380;
+    ctx.font = font(900, size); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.beginPath(); ctx.rect(0, H / 2 - size * .8, W, size * 1.0); ctx.clip();
+    const inK = eOutExpo(prog(lt, 0, .45)), outK = eInExpo(prog(lt, .75, 1));
+    const y = H / 2 + size * .2 + (1 - inK) * size - outK * size;
+    const skew = (1 - inK) * .3 - outK * .3;
+    ctx.translate(W / 2, y); ctx.transform(1, 0, -skew, 1, 0, 0);
+    ctx.fillStyle = wd.fg;
+    const sc = 1 + lt * .06;
+    ctx.scale(sc, sc);
+    ctx.fillText(wd.w, 0, 0);
+    ctx.restore();
+    // counter + caption
+    ctx.fillStyle = wd.fg; ctx.font = font(700, 30); ctx.textAlign = 'left';
+    ctx.globalAlpha = prog(lt, .1, .3) * (1 - prog(lt, .85, 1));
+    ctx.fillText(`0${i + 1} / 03`, 80, 100);
+    ctx.textAlign = 'right'; ctx.fillText('MOTION DESIGN', W - 80, H - 80);
+    ctx.globalAlpha = 1;
+    // progress bar
+    ctx.fillStyle = wd.fg; ctx.fillRect(80, H - 92, 360 * eInOut(lt), 8);
+  }
+
+  // Scene 4 — 3D dot sphere + perspective waves (8.5 – 11.5)
+  function sSphere(t) {
+    ctx.fillStyle = P.ink; ctx.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2 - 40;
+    // waves
+    const lines = 28;
+    for (let l = 0; l < lines; l++) {
+      const z = l / lines, py = H * .55 + Math.pow(z, 1.6) * H * .5;
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 16) {
+        const amp = 10 + z * 50;
+        const yy = py + Math.sin(x * .006 + t * 3 + l * .5) * amp * Math.sin(t * 1.3 + z * 3);
+        x ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy);
+      }
+      ctx.strokeStyle = l % 2 ? P.violet : P.blue;
+      ctx.globalAlpha = (.25 + z * .75) * prog(t, l * .02, .4 + l * .02);
+      ctx.lineWidth = 1 + z * 2.5; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    // sphere
+    const grow = eOutBack(prog(t, .05, .8)), shrink = eInExpo(prog(t, 2.6, 3));
+    const R = 300 * grow * (1 - shrink) * (1 + .06 * pulse(t));
+    const ry = t * 1.1, rx = .4 + Math.sin(t) * .25;
+    const pts = sphere.map(p => {
+      const noise = 1 + .18 * Math.sin(p.y * 6 + t * 4) * prog(t, 1, 1.6) * (1 - prog(t, 2.3, 2.6));
+      let x = p.x * noise, y = p.y * noise, z = p.z * noise;
+      [x, z] = [x * Math.cos(ry) - z * Math.sin(ry), x * Math.sin(ry) + z * Math.cos(ry)];
+      [y, z] = [y * Math.cos(rx) - z * Math.sin(rx), y * Math.sin(rx) + z * Math.cos(rx)];
+      return { x, y, z, j: p.j };
+    }).sort((a, b) => a.z - b.z);
+    for (const p of pts) {
+      const f = 900 / (900 + p.z * R);
+      const depth = (p.z + 1) / 2;
+      ctx.globalAlpha = .25 + depth * .75;
+      ctx.fillStyle = p.j > .85 ? P.red : (depth > .5 ? P.mint : P.blue);
+      ctx.beginPath(); ctx.arc(cx + p.x * R * f, cy + p.y * R * f, (1.5 + depth * 3.5) * f, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // orbit label
+    ctx.font = font(700, 26); ctx.textAlign = 'left'; ctx.fillStyle = P.paper;
+    ctx.globalAlpha = prog(t, .6, 1) * (1 - prog(t, 2.4, 2.7));
+    spaced('3D  /  GENERATIVE  /  REALTIME', 80, 100, 6, 'left');
+    ctx.globalAlpha = 1;
+  }
+
+  // Scene 5 — flipping tile mosaic (11.5 – 13.5)
+  function sTiles(t) {
+    ctx.fillStyle = P.ink; ctx.fillRect(0, 0, W, H);
+    const cols = 16, rows = 9, tw = W / cols, th = H / rows;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const d = (c + r) / (cols + rows);
+      const f1 = prog(t, d * .8, d * .8 + .45);        // flip in
+      const f2 = prog(t, .9 + d * .6, .9 + d * .6 + .4); // second flip
+      const f = f2 > 0 ? f2 : f1;
+      const sy = Math.abs(Math.cos(eInOut(f) * Math.PI));
+      const front = eInOut(f) < .5;
+      let col;
+      if (f2 > 0) col = front ? SWATCH[(c + r) % 5] : ((c + r) % 2 ? P.paper : P.ink);
+      else col = front ? P.ink : SWATCH[(c + r) % 5];
+      ctx.fillStyle = col;
+      const pad = 3;
+      const h = (th - pad * 2) * sy;
+      ctx.fillRect(c * tw + pad, r * th + th / 2 - h / 2, tw - pad * 2, h);
+    }
+    // centered caption over the mosaic
+    const k = eOutExpo(prog(t, .6, 1.1)), out = prog(t, 1.7, 2);
+    ctx.fillStyle = P.ink; ctx.globalAlpha = 1 - out;
+    const bw = 900 * k;
+    ctx.fillRect(W / 2 - bw / 2, H / 2 - 90, bw, 180);
+    ctx.font = font(900, 110); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = P.paper; ctx.globalAlpha = prog(t, .8, 1.1) * (1 - out);
+    ctx.fillText('RHYTHM', W / 2, H / 2 + 4);
+    ctx.globalAlpha = 1;
+  }
+
+  // Scene 6 — outro logo (13.5 – 15.0)
+  function sOutro(t) {
+    ctx.fillStyle = P.ink; ctx.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2;
+    // spinning arc logo
+    const k = eOutExpo(prog(t, 0, .7));
+    for (let i = 0; i < 4; i++) {
+      ctx.strokeStyle = SWATCH[i]; ctx.lineWidth = 18; ctx.lineCap = 'round';
+      const a0 = i * TAU / 4 + t * 2.2 + (1 - k) * 3;
+      ctx.beginPath(); ctx.arc(cx, cy - 70, 110, a0, a0 + TAU / 4 * .7 * k); ctx.stroke();
+    }
+    ctx.fillStyle = P.paper;
+    ctx.beginPath(); ctx.arc(cx, cy - 70, 34 * eOutBack(prog(t, .2, .6)) * (1 + .2 * pulse(t)), 0, TAU); ctx.fill();
+    ctx.font = font(900, 72); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.globalAlpha = prog(t, .35, .7);
+    spaced('SHOWREEL 2026', cx, cy + 120, lerp(40, 10, eOutCubic(prog(t, .35, 1.2))));
+    ctx.font = font(500, 26);
+    ctx.globalAlpha = prog(t, .6, .9);
+    ctx.fillStyle = '#8a8798';
+    spaced('THANKS FOR WATCHING', cx, cy + 190, 8);
+    ctx.globalAlpha = 1;
+    // fade to black
+    ctx.fillStyle = P.ink; ctx.globalAlpha = prog(t, 1.25, 1.5);
+    ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+  }
+
+  // letter-spaced text helper
+  function spaced(str, x, y, sp, align = 'center') {
+    const chars = [...str], ws = chars.map(ch => ctx.measureText(ch).width);
+    const total = ws.reduce((a, b) => a + b, 0) + sp * (chars.length - 1);
+    const prev = ctx.textAlign; ctx.textAlign = 'left';
+    let cx = align === 'center' ? x - total / 2 : x;
+    chars.forEach((ch, i) => { ctx.fillText(ch, cx, y); cx += ws[i] + sp; });
+    ctx.textAlign = prev;
+  }
+
+  const SCENES = [
+    { at: 0.0, dur: 2.5, fn: sIntro },
+    { at: 2.5, dur: 3.0, fn: sGeometry },
+    { at: 5.5, dur: 3.0, fn: sType },
+    { at: 8.5, dur: 3.0, fn: sSphere },
+    { at: 11.5, dur: 2.0, fn: sTiles },
+    { at: 13.5, dur: 1.5, fn: sOutro } ];
+
+  // colored bar wipe across scene cuts
+  function wipe(t) {
+    for (const s of SCENES.slice(1, 5)) {
+      const lt = t - s.at + .3; // wipe spans cut-0.3 .. cut+0.3
+      if (lt < 0 || lt > .6) continue;
+      for (let b = 0; b < 3; b++) {
+        const k = prog(lt, b * .05, .45 + b * .05);
+        const x0 = lerp(-W * 1.3, W * 1.3, eInOut(k));
+        ctx.save(); ctx.translate(x0, 0); ctx.transform(1, 0, -.25, 1, 0, 0);
+        ctx.fillStyle = [P.red, P.yellow, P.ink][b];
+        ctx.fillRect(-W / 2 + b * 120, 0, W, H);
+        ctx.restore();
+      }
+    }
+  }
+
+  // HUD: timecode + frame corners
+  function hud(t) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'difference';
+    ctx.fillStyle = '#fff'; ctx.font = font(500, 22); ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+    const f = Math.floor(t * 30) % 30, s = Math.floor(t);
+    ctx.fillText(`00:00:${String(s).padStart(2, '0')}:${String(f).padStart(2, '0')}`, W - 60, 60);
+    const L = 36, m = 40; ctx.fillRect(m, m, L, 3); ctx.fillRect(m, m, 3, L);
+    ctx.fillRect(W - m - L, H - m - 3, L, 3); ctx.fillRect(W - m - 3, H - m - L, 3, L);
+    ctx.restore();
+  }
+
+  function render(t) {
+    t = clamp(t, 0, DURATION - 1e-6);
+    const s = SCENES.findLast(sc => t >= sc.at);
+    ctx.save(); s.fn(t - s.at); ctx.restore();
+    wipe(t);
+    if (t < 14.75) hud(t);
+    // vignette
+    const g = ctx.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, H * 1.05);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.35)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  window.renderFrame = render;
+  window.SHOWREEL_DURATION = DURATION;
+
+  // ---------- playback ----------
+  const capture = new URLSearchParams(location.search).has('capture');
+  if (capture) { document.body.classList.add('capture'); render(0); return; }
+  const playBtn = document.getElementById('play'), loopBtn = document.getElementById('loop');
+  const scrub = document.getElementById('scrub'), tc = document.getElementById('tc');
+  let playing = true, looping = true, t0 = performance.now(), cur = 0;
+  playBtn.onclick = () => { playing = !playing; playBtn.textContent = playing ? 'Pause' : 'Play';
+    if (playing) { if (cur >= DURATION) cur = 0; t0 = performance.now() - cur * 1000; } };
+  loopBtn.onclick = () => { looping = !looping; loopBtn.textContent = `Loop: ${looping ? 'on' : 'off'}`; };
+  scrub.oninput = () => { cur = scrub.value / 1000; t0 = performance.now() - cur * 1000; render(cur); };
+  addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); playBtn.click(); } });
+  (function tick(now) {
+    if (playing) {
+      cur = (now - t0) / 1000;
+      if (cur >= DURATION) { if (looping) { t0 = now; cur = 0; } else { cur = DURATION; playing = false; playBtn.textContent = 'Play'; } }
+      render(cur); scrub.value = Math.round(cur * 1000);
+      tc.textContent = `00:${String(Math.floor(cur)).padStart(2, '0')}`;
+    }
+    requestAnimationFrame(tick);
+  })(performance.now());
+})();
+</script>
+</body>
+</html>
