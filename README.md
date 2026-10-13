@@ -31,3 +31,23 @@ Post effects: screen shake, zoom punches, chromatic aberration, glitch slices, f
 - **Re-render:** `NODE_PATH=$(npm root -g) node valorant-edit/render.mjs` (add `--4k` for 3840×2160). `audio.mjs` regenerates `edit.wav`.
 
 This is an unofficial fan edit. It is not affiliated with or endorsed by Riot Games, and it contains no game footage or Riot assets: every visual and sound is generated in code. The fonts are Anton and Chakra Petch, both under the SIL Open Font License (see `valorant-edit/fonts/`).
+
+## Opus 5.5 tanıtım videosu
+
+`opus-promo/` holds a 20-second Turkish motion-design video introducing Claude Opus 5.5. It is a canvas animation with its own synthesized soundtrack (120 BPM, D major).
+
+| Süre | Sahne |
+|---|---|
+| 0–3s | Giriş: "Tanışın — Claude Opus 5.5" |
+| 3–6s | 1M token bağlam penceresi: sayaç ve dolan token ızgarası |
+| 6–9s | Tek yanıtta 128K çıktı token'ı, gerçek bir TypeScript SDK çağrısıyla |
+| 9–12s | Uyarlanabilir düşünme: effort seviyeleri (low → max, varsayılan medium) ve büyüyen düşünce ağacı |
+| 12–15s | Fiyat: 1M token başına $4 girdi / $20 çıktı (Opus 5'te $5 / $25), %20 daha düşük |
+| 15–17.5s | Hızlı mod: 2,5 kata kadar daha hızlı çıktı (araştırma önizlemesi) |
+| 17.5–20s | Kapanış: `claude-opus-5-5` |
+
+- **İzle:** serve the folder (for example `python3 -m http.server` inside `opus-promo/`), open `index.html`, then click *Sesli oynat*.
+- **Video:** `opus-promo/opus-promo.mp4` (1920×1080, 60 fps, H.264 CRF 14, AAC 320 kbps).
+- **Yeniden üret:** `NODE_PATH=$(npm root -g) node opus-promo/render.mjs` (add `--4k` for 3840×2160). `audio.mjs` regenerates `promo.wav`.
+
+This is an independent promo. It was not made by Anthropic and uses no Anthropic logos or brand assets; the mark in the video is an original design. Every figure comes from Anthropic's published model documentation: no benchmark scores are claimed. The fonts are Instrument Serif, Inter and JetBrains Mono, all under the SIL Open Font License (see `opus-promo/fonts/`).
