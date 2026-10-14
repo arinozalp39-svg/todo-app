@@ -51,3 +51,23 @@ This is an unofficial fan edit. It is not affiliated with or endorsed by Riot Ga
 - **Yeniden üret:** `NODE_PATH=$(npm root -g) node opus-promo/render.mjs` (add `--4k` for 3840×2160). `audio.mjs` regenerates `promo.wav`.
 
 This is an independent promo. It was not made by Anthropic and uses no Anthropic logos or brand assets; the mark in the video is an original design. Every figure comes from Anthropic's published model documentation: no benchmark scores are claimed. The fonts are Instrument Serif, Inter and JetBrains Mono, all under the SIL Open Font License (see `opus-promo/fonts/`).
+
+## NVIDIA tanıtım videosu
+
+`nvidia-promo/` holds a 20-second Turkish motion-design video introducing NVIDIA. It is a canvas animation with its own synthesized soundtrack (120 BPM, E minor). A timeline runs along the bottom from 1993 to 2022+.
+
+| Süre | Sahne |
+|---|---|
+| 0–3s | Giriş: çekirdekleri yanan bir GPU yongası, ardından "NVIDIA · Hızlandırılmış bilişimin öncüsü" |
+| 3–6s | 1993: üç kurucu (Jensen Huang, Chris Malachowsky, Curtis Priem), merkez Santa Clara |
+| 6–9s | 1999: GeForce 256, "GPU" adıyla tanıtılan ilk ürün (dönen, gölgelendirilmiş bir 3D model) |
+| 9–12s | 2006: CUDA (birkaç CPU çekirdeği ile binlerce paralel GPU çekirdeğinin karşılaştırması) |
+| 12–14.5s | 2018: RTX, gerçek zamanlı ışın izleme (kameradan kürelere ve ışığa giden ışınlar) |
+| 14.5–17.5s | Yapay zekâ çağı: Hopper (2022), Blackwell (2024); piyasa değeri $1T → $5T, 29 Ekim 2025'te 5 trilyon doları aşan ilk şirket |
+| 17.5–20s | Kapanış: "NVIDIA · Geleceği hızlandırıyor." |
+
+- **İzle:** serve the folder (for example `python3 -m http.server` inside `nvidia-promo/`), open `index.html`, then click *Sesli oynat*.
+- **Video:** `nvidia-promo/nvidia-promo.mp4` (1920×1080, 60 fps, H.264 CRF 14, AAC 320 kbps).
+- **Yeniden üret:** `NODE_PATH=$(npm root -g) node nvidia-promo/render.mjs` (add `--4k` for 3840×2160). `audio.mjs` regenerates `promo.wav`.
+
+This is an independent promo. It is not affiliated with or endorsed by NVIDIA, and it uses no NVIDIA logos or brand assets; the name is set in Archivo. NVIDIA, GeForce, CUDA and RTX are trademarks of NVIDIA Corporation. The fonts are Archivo, Inter and JetBrains Mono, all under the SIL Open Font License (see `nvidia-promo/fonts/`).

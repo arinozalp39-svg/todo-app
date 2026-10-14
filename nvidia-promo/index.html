@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NVIDIA Tanıtım</title>
+<style>
+  /* latin + latin-ext subsets so Turkish glyphs (ğ ş İ) render */
+  @font-face { font-family: "Display"; font-weight: 800; src: url(fonts/archivo-latin-800-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212; }
+  @font-face { font-family: "Display"; font-weight: 800; src: url(fonts/archivo-latin-ext-800-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+1E00-1E9F,U+20A0-20AB,U+20AD-20C0,U+2C60-2C7F,U+A720-A7FF; }
+  @font-face { font-family: "Display"; font-weight: 500; src: url(fonts/archivo-latin-500-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212; }
+  @font-face { font-family: "Display"; font-weight: 500; src: url(fonts/archivo-latin-ext-500-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+1E00-1E9F,U+20A0-20AB,U+20AD-20C0,U+2C60-2C7F,U+A720-A7FF; }
+  @font-face { font-family: "Sans"; font-weight: 400; src: url(fonts/inter-latin-400-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212; }
+  @font-face { font-family: "Sans"; font-weight: 400; src: url(fonts/inter-latin-ext-400-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+1E00-1E9F,U+20A0-20AB,U+20AD-20C0,U+2C60-2C7F,U+A720-A7FF; }
+  @font-face { font-family: "Sans"; font-weight: 600; src: url(fonts/inter-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212; }
+  @font-face { font-family: "Sans"; font-weight: 600; src: url(fonts/inter-latin-ext-600-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+1E00-1E9F,U+20A0-20AB,U+20AD-20C0,U+2C60-2C7F,U+A720-A7FF; }
+  @font-face { font-family: "Mono"; font-weight: 500; src: url(fonts/jetbrains-mono-latin-500-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+20AC,U+2122,U+2212; }
+  @font-face { font-family: "Mono"; font-weight: 500; src: url(fonts/jetbrains-mono-latin-ext-500-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+1E00-1E9F; }
+  :root { --bg: #050605; --fg: #f2f5ee; --green: #76b900; --muted: #7d847a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; color: var(--fg); font-family: "Sans", sans-serif; overflow: hidden; }
+  #stage { position: absolute; inset: 0; display: grid; place-items: center; }
+  canvas { width: 100vw; height: 56.25vw; max-height: 100vh; max-width: 177.78vh; display: block; background: #000; }
+  #ui { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; gap: 12px; align-items: center; opacity: 0; transition: opacity .3s; }
+  body:hover #ui, #ui:focus-within { opacity: 1; }
+  #ui button { background: rgba(118,185,0,.15); color: var(--fg); border: 1px solid var(--green); padding: 6px 16px; font: 600 13px "Sans", sans-serif; cursor: pointer; }
+  #scrub { flex: 1; accent-color: var(--green); }
+  #tc { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); min-width: 52px; text-align: right; }
+  #start { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.55); cursor: pointer; border: 0; color: var(--fg); font: 600 20px "Sans", sans-serif; }
+  #start span { border: 1px solid var(--green); padding: 16px 34px; background: rgba(118,185,0,.14); }
+  body.capture #ui, body.capture #start { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<button id="start" aria-label="Sesli oynat"><span>▶ Sesli oynat</span></button>
+<div id="ui">
+  <button id="play" aria-label="Oynat veya duraklat">Duraklat</button>
+  <input id="scrub" type="range" min="0" max="20000" value="0" aria-label="Zaman çizelgesi">
+  <span id="tc">0.00</span>
+</div>
+<audio id="aud" src="promo.wav" preload="auto"></audio>
+<script>
+(() => {
+  // ============ setup ============
+  const W = 1920, H = 1080, DURATION = 20, BEAT = 0.5; // 120 BPM
+  const params = new URLSearchParams(location.search);
+  const S = Number(params.get('scale') || 1);          // 2 = 4K
+  const cv = document.getElementById('c'); cv.width = W * S; cv.height = H * S;
+  const out = cv.getContext('2d');
+  const mk = () => { const c = document.createElement('canvas'); c.width = W * S; c.height = H * S; return c; };
+  const buf = mk(), bx = buf.getContext('2d');
+  const acc = mk();
+  let ctx = bx;
+
+  const C = { bg: '#050605', panel: '#0d110c', line: '#1f2a1a', g: '#76b900', g2: '#9ad42a', gd: '#3d6100',
+              white: '#f2f5ee', mute: '#7d847a', dim: '#2a3326' };
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const prog = (t, a, b) => clamp((t - a) / (b - a));
+  const eOut = t => 1 - Math.pow(1 - t, 3);
+  const eIn = t => t * t * t;
+  const eIO = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const eOutExpo = t => t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
+  const eIOExpo = t => t <= 0 ? 0 : t >= 1 ? 1 : t < .5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2;
+  const eBack = t => { const c = 1.6; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+  const TAU = Math.PI * 2;
+  function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  const hash = n => rng(n * 9973 + 17)();
+  const DISP = (s, w = 800) => `${w} ${s}px "Display", sans-serif`;
+  const SANS = (s, w = 400) => `${w} ${s}px "Sans", sans-serif`;
+  const MONO = s => `500 ${s}px "Mono", monospace`;
+  const pulse = t => Math.exp(-((t % BEAT) / BEAT) * 6);
+
+  // ============ helpers ============
+  function spaced(str, x, y, sp, align = 'center') {
+    const ch = [...str], ws = ch.map(c => ctx.measureText(c).width);
+    const tot = ws.reduce((a, b) => a + b, 0) + sp * (ch.length - 1);
+    const prev = ctx.textAlign; ctx.textAlign = 'left';
+    let cx = align === 'center' ? x - tot / 2 : align === 'right' ? x - tot : x;
+    ch.forEach((c, i) => { ctx.fillText(c, cx, y); cx += ws[i] + sp; });
+    ctx.textAlign = prev; return tot;
+  }
+  function reveal(str, x, y, t, start, per, { align = 'center', dur = .55 } = {}) {
+    const ch = [...str], ws = ch.map(c => ctx.measureText(c).width), tot = ws.reduce((a, b) => a + b, 0);
+    const m = ctx.measureText('HgĞ'), asc = m.actualBoundingBoxAscent, desc = m.actualBoundingBoxDescent;
+    let cx = align === 'center' ? x - tot / 2 : align === 'right' ? x - tot : x;
+    const prev = ctx.textAlign; ctx.textAlign = 'left';
+    ctx.save(); ctx.beginPath(); ctx.rect(cx - 40, y - asc - 12, tot + 80, asc + desc + 26); ctx.clip();
+    ch.forEach((c, i) => {
+      const k = eOutExpo(prog(t, start + i * per, start + i * per + dur));
+      if (k > 0) { ctx.save(); ctx.globalAlpha *= clamp(k * 1.5); ctx.fillText(c, cx, y + (1 - k) * (asc + desc)); ctx.restore(); }
+      cx += ws[i];
+    });
+    ctx.restore(); ctx.textAlign = prev; return tot;
+  }
+  function fadeUp(fn, t, start, dur = .5, dist = 26) {
+    const k = eOutExpo(prog(t, start, start + dur)); if (k <= 0) return;
+    ctx.save(); ctx.globalAlpha *= k; ctx.translate(0, (1 - k) * dist); fn(); ctx.restore();
+  }
+  function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+  function eyebrow(text, x, y, t, start, align = 'left') {
+    fadeUp(() => {
+      ctx.font = SANS(22, 600); ctx.fillStyle = C.g; ctx.textBaseline = 'alphabetic';
+      const w = spaced(text, align === 'left' ? x + 30 : x, y, 5, align);
+      if (align === 'left') { ctx.fillRect(x, y - 9, 18 * eOut(prog(t, start, start + .4)), 3); }
+      return w;
+    }, t, start, .5, 14);
+  }
+  function title(text, x, y, t, start, size = 120, align = 'left', col = C.white) {
+    ctx.font = DISP(size); ctx.fillStyle = col; ctx.textBaseline = 'alphabetic';
+    reveal(text, x, y, t, start, .022, { align });
+  }
+  function body(lines, x, y, t, start, size = 32, col = C.mute, align = 'left') {
+    fadeUp(() => { ctx.font = SANS(size); ctx.fillStyle = col; ctx.textAlign = align; ctx.textBaseline = 'alphabetic';
+      lines.forEach((l, i) => ctx.fillText(l, x, y + i * size * 1.45)); }, t, start);
+  }
+  function bg(t, gridA = .05) {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    const g = ctx.createRadialGradient(W * .7, H * .45, 0, W * .7, H * .45, W * .7);
+    g.addColorStop(0, 'rgba(118,185,0,.10)'); g.addColorStop(1, 'rgba(118,185,0,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // circuit grid
+    ctx.save(); ctx.strokeStyle = `rgba(118,185,0,${gridA})`; ctx.lineWidth = 1; ctx.beginPath();
+    for (let x = 0; x <= W; x += 60) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let y = 0; y <= H; y += 60) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+    // data pulses running along the grid
+    for (let i = 0; i < 14; i++) {
+      const horiz = i % 2, lane = Math.floor(hash(i + 3) * (horiz ? 18 : 32)) * 60;
+      const sp = 300 + hash(i + 7) * 500, len = 120;
+      const p = ((t * sp + hash(i + 11) * 4000) % ((horiz ? W : H) + len)) - len;
+      const gr = horiz ? ctx.createLinearGradient(p, 0, p + len, 0) : ctx.createLinearGradient(0, p, 0, p + len);
+      gr.addColorStop(0, 'rgba(154,212,42,0)'); gr.addColorStop(1, 'rgba(154,212,42,.55)');
+      ctx.fillStyle = gr; horiz ? ctx.fillRect(p, lane - 1, len, 3) : ctx.fillRect(lane - 1, p, 3, len);
+    }
+    ctx.restore();
+  }
+
+  // ============ 1. intro (0 - 3) ============
+  function sIntro(t) {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    // GPU die: a grid of cores lighting up from the centre
+    const cols = 28, rows = 14, cs = 44, gap = 10, w = cols * (cs + gap), h = rows * (cs + gap);
+    const ox = W / 2 - w / 2, oy = H / 2 - h / 2;
+    const fadeOut = eIO(prog(t, 1.1, 1.7));
+    const scan = lerp(-200, W + 200, eIO(prog(t, .2, 1.3)));
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = ox + c * (cs + gap), y = oy + r * (cs + gap);
+      const d = Math.hypot(x - W / 2, y - H / 2) / 900;
+      const k = eOut(prog(t, d * .9, d * .9 + .35));
+      if (k <= 0) continue;
+      const near = Math.max(0, 1 - Math.abs(x - scan) / 160);
+      const lit = .25 + .75 * near + .35 * hash(r * cols + c + Math.floor(t * 8)) * (1 - near);
+      ctx.globalAlpha = k * lerp(1, .18, fadeOut);
+      ctx.strokeStyle = C.g; ctx.lineWidth = 2; rrect(x, y, cs * k, cs * k, 5); ctx.stroke();
+      ctx.fillStyle = `rgba(118,185,0,${.5 * lit})`; ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // scan line
+    if (t < 1.4) { const gr = ctx.createLinearGradient(scan - 140, 0, scan, 0); gr.addColorStop(0, 'rgba(154,212,42,0)'); gr.addColorStop(1, 'rgba(200,255,90,.75)');
+      ctx.fillStyle = gr; ctx.fillRect(scan - 140, oy - 40, 140, h + 80); ctx.fillStyle = '#d8ff8a'; ctx.fillRect(scan - 2, oy - 40, 3, h + 80); }
+    // vignette darken for the title
+    ctx.fillStyle = `rgba(5,6,5,${.55 * fadeOut})`; ctx.fillRect(0, 0, W, H);
+    // title
+    ctx.font = DISP(250); ctx.fillStyle = C.white; ctx.textBaseline = 'alphabetic';
+    const k = eOutExpo(prog(t, 1.25, 1.9));
+    if (k > 0) {
+      ctx.save(); ctx.globalAlpha = k; ctx.shadowColor = 'rgba(118,185,0,.6)'; ctx.shadowBlur = 50 * k;
+      spaced('NVIDIA', W / 2, H / 2 + 80, lerp(70, 24, k)); ctx.restore();
+    }
+    const lk = eIO(prog(t, 1.6, 2.1));
+    ctx.fillStyle = C.g; ctx.fillRect(W / 2 - 330 * lk, H / 2 + 125, 660 * lk, 6);
+    fadeUp(() => { ctx.font = SANS(36); ctx.fillStyle = C.mute; ctx.textAlign = 'center'; ctx.fillText('Hızlandırılmış bilişimin öncüsü', W / 2, H / 2 + 200); }, t, 1.8, .6);
+  }
+
+  // ============ 2. founding (3 - 6) ============
+  const FOUNDERS = ['Jensen Huang', 'Chris Malachowsky', 'Curtis Priem'];
+  function sFounding(t) {
+    bg(t + 3);
+    // giant outlined year
+    ctx.save(); ctx.font = DISP(400); ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+    ctx.strokeStyle = `rgba(118,185,0,${.35 * eOut(prog(t, 0, .8))})`; ctx.lineWidth = 3;
+    ctx.strokeText('1993', W - 90 + (1 - eOutExpo(prog(t, 0, 1))) * 200 - t * 20, 930); ctx.restore();
+    const L = 150;
+    eyebrow('KURULUŞ · 1993', L, 260, t, .05);
+    title('Üç kurucu.', L - 6, 400, t, .1);
+    title('Tek bir fikir.', L - 6, 530, t, .3, 120, 'left', C.g);
+    FOUNDERS.forEach((f, i) => {
+      const st = .9 + i * .2, k = eOutExpo(prog(t, st, st + .5));
+      if (k <= 0) return;
+      const y = 640 + i * 76;
+      ctx.save(); ctx.globalAlpha = k;
+      ctx.fillStyle = C.g; ctx.fillRect(L, y - 30, 6, 44 * k);
+      ctx.font = SANS(38, 600); ctx.fillStyle = C.white; ctx.textAlign = 'left'; ctx.fillText(f, L + 30 + (1 - k) * 40, y + 2);
+      ctx.restore();
+    });
+    body(['Merkez: Santa Clara, Kaliforniya'], L, 925, t, 1.6, 26);
+  }
+
+  // ============ 3. GPU (6 - 9) ============
+  const ICO = (() => { const p = (1 + Math.sqrt(5)) / 2;
+    const v = [[-1, p, 0], [1, p, 0], [-1, -p, 0], [1, -p, 0], [0, -1, p], [0, 1, p], [0, -1, -p], [0, 1, -p], [p, 0, -1], [p, 0, 1], [-p, 0, -1], [-p, 0, 1]]
+      .map(a => { const l = Math.hypot(...a); return a.map(x => x / l); });
+    const f = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+    return { v, f }; })();
+  function sGPU(t) {
+    bg(t + 6);
+    const L = 150;
+    eyebrow('1999', L, 300, t, .05);
+    title('GeForce 256', L - 6, 440, t, .1, 130);
+    body(['“GPU” adıyla tanıtılan ilk ürün.', '3D grafikler artık ekran kartında hesaplanıyor.'], L, 540, t, .6);
+    // spec chips
+    ['Donanımsal T&L', '3D grafik', 'Oyun'].forEach((s, i) => fadeUp(() => {
+      ctx.font = MONO(22); const w = ctx.measureText(s).width + 36; const x = L + [0, 250, 420][i];
+      ctx.strokeStyle = C.g; ctx.lineWidth = 2; rrect(x, 680, w, 48, 6); ctx.stroke();
+      ctx.fillStyle = C.g2; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText(s, x + 18, 705); }, t, .9 + i * .12));
+    // rotating flat-shaded icosahedron
+    const cx = 1380, cy = 520, R = 300 * eBack(prog(t, .1, .7));
+    const ay = t * .9, ax = .5 + Math.sin(t * .7) * .3;
+    const P = ICO.v.map(([x, y, z]) => {
+      [x, z] = [x * Math.cos(ay) - z * Math.sin(ay), x * Math.sin(ay) + z * Math.cos(ay)];
+      [y, z] = [y * Math.cos(ax) - z * Math.sin(ax), y * Math.sin(ax) + z * Math.cos(ax)];
+      return [x, y, z];
+    });
+    const light = [-.4, -.6, -.7];
+    const faces = ICO.f.map(f => {
+      const [a, b, c] = f.map(i => P[i]);
+      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+      const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], nl = Math.hypot(...n);
+      return { pts: [a, b, c], z: (a[2] + b[2] + c[2]) / 3, nz: n[2] / nl, lum: Math.max(0, -(n[0] * light[0] + n[1] * light[1] + n[2] * light[2]) / nl) };
+    }).sort((p, q) => q.z - p.z);
+    const fill = prog(t, .6, 1.4); // wireframe first, then shaded
+    for (const f of faces) {
+      if (f.nz > 0) continue; // back-face cull (z towards viewer is negative)
+      ctx.beginPath(); f.pts.forEach(([x, y], i) => ctx[i ? 'lineTo' : 'moveTo'](cx + x * R, cy + y * R)); ctx.closePath();
+      const l = .15 + f.lum * .85;
+      ctx.fillStyle = `rgba(${Math.round(30 + 110 * l)},${Math.round(60 + 160 * l)},${Math.round(10 + 30 * l)},${fill})`; ctx.fill();
+      ctx.strokeStyle = `rgba(200,255,120,${.9 - fill * .5})`; ctx.lineWidth = 2; ctx.stroke();
+    }
+    P.forEach(([x, y, z]) => { if (z > .2) return; ctx.fillStyle = '#d8ff8a'; ctx.beginPath(); ctx.arc(cx + x * R, cy + y * R, 5, 0, TAU); ctx.fill(); });
+    // shadow
+    const sh = ctx.createRadialGradient(cx, cy + 400, 0, cx, cy + 400, 280); sh.addColorStop(0, 'rgba(118,185,0,.25)'); sh.addColorStop(1, 'rgba(118,185,0,0)');
+    ctx.fillStyle = sh; ctx.fillRect(cx - 300, cy + 330, 600, 140);
+  }
+
+  // ============ 4. CUDA (9 - 12) ============
+  function sCUDA(t) {
+    bg(t + 9);
+    const L = 150;
+    eyebrow('2006', L, 250, t, .05);
+    title('CUDA', L - 6, 400, t, .1, 150);
+    body(['GPU’nun paralel gücü artık', 'her türlü hesaplama için: bilim,', 'mühendislik ve yapay zekâ.'], L, 480, t, .5);
+    fadeUp(() => { ctx.font = MONO(26); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      const parts = [['#9ad42a', 'kernel'], ['#7d847a', '<<<'], ['#f2f5ee', 'blocks, threads'], ['#7d847a', '>>>'], ['#f2f5ee', '(data);']];
+      let x = L; rrect(L - 20, 680, 520, 64, 8); ctx.fillStyle = C.panel; ctx.fill(); ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.stroke();
+      parts.forEach(([c, s]) => { ctx.fillStyle = c; ctx.fillText(s, x, 722); x += ctx.measureText(s).width; }); }, t, .9);
+    // CPU vs GPU
+    const px = 960;
+    fadeUp(() => {
+      ctx.font = SANS(24, 600); ctx.fillStyle = C.mute; ctx.textAlign = 'left'; ctx.fillText('CPU · birkaç güçlü çekirdek', px, 220);
+      for (let i = 0; i < 8; i++) {
+        const x = px + (i % 4) * 92, y = 250 + Math.floor(i / 4) * 92;
+        const on = Math.floor(t * 6) % 8 === i; // one at a time: sequential
+        rrect(x, y, 80, 80, 8); ctx.fillStyle = on ? C.g : C.panel; ctx.fill(); ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.stroke();
+      }
+    }, t, .3);
+    fadeUp(() => {
+      ctx.font = SANS(24, 600); ctx.fillStyle = C.g; ctx.textAlign = 'left'; ctx.fillText('GPU · binlerce paralel çekirdek', px, 500);
+      const cols = 48, rows = 22, cs = 14, gp = 3;
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const wave = Math.sin(c * .35 - t * 9) * .5 + .5, wave2 = Math.sin(r * .5 + t * 6) * .5 + .5;
+        const k = eOut(prog(t, .5 + (c + r) * .006, .8 + (c + r) * .006));
+        const a = (.15 + .85 * wave * wave2) * k;
+        ctx.fillStyle = `rgba(${Math.round(80 + 120 * a)},${Math.round(150 + 105 * a)},0,${a})`;
+        ctx.fillRect(px + c * (cs + gp), 530 + r * (cs + gp), cs, cs);
+      }
+    }, t, .45);
+  }
+
+  // ============ 5. RTX (12 - 14.5) ============
+  const SPH = [{ x: 1180, y: 600, r: 150, c: [118, 185, 0] }, { x: 1520, y: 640, r: 110, c: [220, 225, 215] }, { x: 1380, y: 420, r: 70, c: [154, 212, 42] }];
+  const LIGHT = { x: 1700, y: 160 }, CAM = { x: 860, y: 520 };
+  function sRTX(t) {
+    bg(t + 12, .03);
+    const L = 150;
+    eyebrow('2018', L, 330, t, .05);
+    title('RTX', L - 6, 490, t, .1, 170);
+    body(['Oyunlarda gerçek zamanlı', 'ışın izleme.'], L, 580, t, .5, 36, C.white);
+    body(['Işık, gölge ve yansımalar', 'fiziğe uygun hesaplanıyor.'], L, 700, t, .7, 28);
+    // floor
+    ctx.save(); ctx.strokeStyle = 'rgba(118,185,0,.18)'; ctx.lineWidth = 1.5; ctx.beginPath();
+    for (let i = 0; i < 12; i++) { const y = 760 + Math.pow(i / 12, 1.6) * 320; ctx.moveTo(880, y); ctx.lineTo(W, y); }
+    for (let i = -8; i <= 8; i++) { ctx.moveTo(1400 + i * 40, 760); ctx.lineTo(1400 + i * 180, H); }
+    ctx.stroke(); ctx.restore();
+    // light
+    const lg = ctx.createRadialGradient(LIGHT.x, LIGHT.y, 0, LIGHT.x, LIGHT.y, 120); lg.addColorStop(0, 'rgba(255,255,230,.9)'); lg.addColorStop(1, 'rgba(255,255,230,0)');
+    ctx.fillStyle = lg; ctx.fillRect(LIGHT.x - 120, LIGHT.y - 120, 240, 240);
+    // spheres with shadows
+    SPH.forEach((s, i) => {
+      const k = eBack(prog(t, .1 + i * .1, .6 + i * .1)); if (k <= 0) return;
+      ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.beginPath(); ctx.ellipse(s.x - 40, 770 + (s.y - 600) * .1, s.r * 1.1 * k, s.r * .22 * k, 0, 0, TAU); ctx.fill();
+      const g = ctx.createRadialGradient(s.x + s.r * .35, s.y - s.r * .4, s.r * .05, s.x, s.y, s.r * k);
+      const [r, gg, b] = s.c; g.addColorStop(0, '#ffffff'); g.addColorStop(.25, `rgb(${r},${gg},${b})`); g.addColorStop(1, `rgb(${r * .15 | 0},${gg * .15 | 0},${b * .15 | 0})`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(s.x, s.y, s.r * k, 0, TAU); ctx.fill();
+    });
+    // rays: camera -> sphere surface -> light, drawn progressively
+    const N = 28;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < N; i++) {
+      const st = .5 + i * .05, p = prog(t, st, st + .45); if (p <= 0) continue;
+      const s = SPH[i % 3], a = -Math.PI * .95 + hash(i + 5) * Math.PI * .9;
+      const hx = s.x + Math.cos(a + Math.PI) * s.r * .98, hy = s.y + Math.sin(a + Math.PI) * s.r * .55;
+      const seg1 = clamp(p * 2), seg2 = clamp(p * 2 - 1);
+      ctx.strokeStyle = `rgba(216,255,138,${.55 * (1 - prog(t, st + 1.2, st + 1.6))})`; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(CAM.x, CAM.y); ctx.lineTo(lerp(CAM.x, hx, seg1), lerp(CAM.y, hy, seg1)); ctx.stroke();
+      if (seg2 > 0) { ctx.strokeStyle = `rgba(255,255,220,${.4 * (1 - prog(t, st + 1.2, st + 1.6))})`;
+        ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(lerp(hx, LIGHT.x, seg2), lerp(hy, LIGHT.y, seg2)); ctx.stroke();
+        ctx.fillStyle = '#e8ffb0'; ctx.beginPath(); ctx.arc(hx, hy, 3.5, 0, TAU); ctx.fill(); }
+    }
+    ctx.restore();
+    // camera glyph
+    ctx.fillStyle = C.white; ctx.beginPath(); ctx.moveTo(CAM.x + 16, CAM.y); ctx.lineTo(CAM.x - 18, CAM.y - 18); ctx.lineTo(CAM.x - 18, CAM.y + 18); ctx.closePath(); ctx.fill();
+  }
+
+  // ============ 6. AI era (14.5 - 17.5) ============
+  const CAPS = [['$1T', 'May 2023'], ['$2T', 'Şub 2024'], ['$3T', 'Haz 2024'], ['$4T', 'Tem 2025'], ['$5T', 'Eki 2025']];
+  const r6 = rng(21);
+  const NET = [5, 8, 8, 5].map((n, l) => Array.from({ length: n }, (_, i) => ({ x: 1000 + l * 230, y: 210 + (i + .5) * (560 / n), p: r6() })));
+  function sAI(t) {
+    bg(t + 14.5);
+    // neural net backdrop (faint, upper right)
+    ctx.save(); ctx.globalAlpha = .55 * eOut(prog(t, 0, .6));
+    for (let l = 0; l < NET.length - 1; l++) for (const a of NET[l]) for (const b of NET[l + 1]) {
+      const act = Math.max(0, Math.sin(t * 5 - l * 1.3 + a.p * 6 + b.p * 3));
+      ctx.strokeStyle = `rgba(118,185,0,${.06 + .3 * act * act})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    NET.flat().forEach(n => { const act = .5 + .5 * Math.sin(t * 5 + n.p * 9); ctx.fillStyle = `rgba(154,212,42,${.3 + .7 * act})`; ctx.beginPath(); ctx.arc(n.x, n.y, 9, 0, TAU); ctx.fill(); });
+    ctx.restore();
+    ctx.fillStyle = 'rgba(5,6,5,.55)'; ctx.fillRect(880, 0, W - 880, H);
+    const L = 150;
+    eyebrow('YAPAY ZEKÂ ÇAĞI', L, 230, t, .05);
+    title('Yapay zekânın', L - 6, 360, t, .1, 112);
+    title('motoru.', L - 6, 480, t, .3, 112, 'left', C.g);
+    [['Hopper', '2022'], ['Blackwell', '2024']].forEach(([n, y], i) => fadeUp(() => {
+      const x = L + i * 290; rrect(x, 560, 270, 70, 6); ctx.fillStyle = C.panel; ctx.fill(); ctx.strokeStyle = C.g; ctx.lineWidth = 2; ctx.stroke();
+      ctx.font = SANS(28, 600); ctx.fillStyle = C.white; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(n, x + 22, 596);
+      ctx.font = MONO(22); ctx.fillStyle = C.g2; ctx.textAlign = 'right'; ctx.fillText(y, x + 248, 597); }, t, .6 + i * .15));
+    // market cap staircase
+    fadeUp(() => { ctx.font = SANS(22, 600); ctx.fillStyle = C.mute; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      spaced('PİYASA DEĞERİ', 1000, 230, 5, 'left'); }, t, .3);
+    const base = 840, bw = 120, gap = 34, x0 = 1000;
+    CAPS.forEach(([v, d], i) => {
+      const k = eOutExpo(prog(t, .5 + i * .22, 1.0 + i * .22)); if (k <= 0) return;
+      const h = (i + 1) * 105 * k, x = x0 + i * (bw + gap);
+      const gr = ctx.createLinearGradient(0, base - h, 0, base); gr.addColorStop(0, i === 4 ? '#b8f04a' : C.g); gr.addColorStop(1, C.gd);
+      ctx.fillStyle = gr; ctx.fillRect(x, base - h, bw, h);
+      if (i === 4) { ctx.save(); ctx.shadowColor = C.g2; ctx.shadowBlur = 40 * (.6 + .4 * pulse(t)); ctx.fillRect(x, base - h, bw, 4); ctx.restore(); }
+      ctx.globalAlpha = k; ctx.font = DISP(40); ctx.fillStyle = C.white; ctx.textAlign = 'center'; ctx.fillText(v, x + bw / 2, base - h - 16);
+      ctx.font = SANS(20, 600); ctx.fillStyle = C.mute; ctx.fillText(d, x + bw / 2, base + 36); ctx.globalAlpha = 1;
+    });
+    ctx.fillStyle = C.dim; ctx.fillRect(x0 - 20, base, 5 * (bw + gap) + 6, 2);
+    fadeUp(() => { rrect(L, 700, 760, 120, 8); ctx.fillStyle = 'rgba(118,185,0,.12)'; ctx.fill(); ctx.fillStyle = C.g; ctx.fillRect(L, 700, 6, 120);
+      ctx.font = SANS(30, 600); ctx.fillStyle = C.white; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText('Piyasa değeri 5 trilyon doları aşan', L + 32, 750); ctx.fillText('ilk şirket', L + 32, 794);
+      ctx.font = MONO(22); ctx.fillStyle = C.g2; ctx.fillText('29 Ekim 2025', L + 210, 794); }, t, 1.7);
+  }
+
+  // ============ 7. outro (17.5 - 20) ============
+  function sOutro(t) {
+    bg(t + 17.5, .035);
+    ctx.fillStyle = 'rgba(5,6,5,.5)'; ctx.fillRect(0, 0, W, H);
+    ctx.font = DISP(220); ctx.fillStyle = C.white; ctx.textBaseline = 'alphabetic';
+    const k = eOutExpo(prog(t, .05, .7));
+    ctx.save(); ctx.globalAlpha = k; ctx.shadowColor = 'rgba(118,185,0,.55)'; ctx.shadowBlur = 50;
+    spaced('NVIDIA', W / 2, H / 2 + 30, lerp(50, 22, k)); ctx.restore();
+    const lk = eIO(prog(t, .3, .8)); ctx.fillStyle = C.g; ctx.fillRect(W / 2 - 300 * lk, H / 2 + 70, 600 * lk, 5);
+    ctx.font = DISP(52, 500); ctx.fillStyle = C.g2; reveal('Geleceği hızlandırıyor.', W / 2, H / 2 + 170, t, .55, .02);
+    fadeUp(() => { ctx.font = SANS(19); ctx.fillStyle = 'rgba(125,132,122,.9)'; ctx.textAlign = 'center';
+      ctx.fillText('Bağımsız tanıtım çalışmasıdır · NVIDIA ile bağlantılı değildir · NVIDIA, NVIDIA Corporation’ın ticari markasıdır', W / 2, H - 70); }, t, 1.0);
+    ctx.fillStyle = '#000'; ctx.globalAlpha = eIn(prog(t, 2.05, 2.5)); ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+  }
+
+  // ============ timeline overlay (3 - 17.5) ============
+  const MILES = [['1993', 3], ['1999', 6], ['2006', 9], ['2018', 12], ['2022+', 14.5]];
+  function timeline(t) {
+    const a = prog(t, 3.1, 3.6) * (1 - prog(t, 17.1, 17.5)); if (a <= 0) return;
+    const x0 = 900, x1 = W - 150, y = H - 80;
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.fillStyle = C.dim; ctx.fillRect(x0, y, x1 - x0, 2);
+    let pos = 0; MILES.forEach(([, at], i) => { if (t >= at) pos = i + eIO(prog(t, at, at + .5)) - 1; });
+    pos = Math.max(0, pos);
+    const px = lerp(x0, x1, pos / (MILES.length - 1));
+    ctx.fillStyle = C.g; ctx.fillRect(x0, y, px - x0, 2);
+    MILES.forEach(([lab], i) => {
+      const x = lerp(x0, x1, i / (MILES.length - 1)), on = i <= pos + .01;
+      ctx.fillStyle = on ? C.g : C.dim; ctx.beginPath(); ctx.arc(x, y + 1, 6, 0, TAU); ctx.fill();
+      ctx.font = MONO(18); ctx.fillStyle = on ? C.white : C.mute; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText(lab, x, y - 18);
+    });
+    ctx.fillStyle = '#d8ff8a'; ctx.shadowColor = C.g2; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(px, y + 1, 9, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  const SCENES = [
+    { at: 0, fn: sIntro }, { at: 3, fn: sFounding, wipe: 'scan' }, { at: 6, fn: sGPU, wipe: 'slices' },
+    { at: 9, fn: sCUDA, wipe: 'scan' }, { at: 12, fn: sRTX, wipe: 'slices' }, { at: 14.5, fn: sAI, wipe: 'scan' },
+    { at: 17.5, fn: sOutro, wipe: 'slices' } ];
+  const WIPE = .45;
+
+  // ============ post ============
+  const grain = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+    const d = g.createImageData(256, 256), r = rng(5); for (let i = 0; i < d.data.length; i += 4) { const v = r() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; }
+    g.putImageData(d, 0, 0); return c; })();
+  function wipeClip(kind, p) {
+    bx.beginPath();
+    if (kind === 'scan') bx.rect(0, 0, W, H * p);
+    else for (let i = 0; i < 8; i++) { const k = eIOExpo(clamp(p * 1.6 - i * .075)); bx.rect(i * W / 8, 0, W / 8 * k + 1, H); }
+  }
+  function drawScene(sc, lt) { ctx.save(); sc.fn(lt); ctx.restore(); }
+  function frame(t, dst) {
+    t = clamp(t, 0, DURATION - 1e-4);
+    ctx = bx; bx.setTransform(S, 0, 0, S, 0, 0);
+    const i = SCENES.findLastIndex(s => t >= s.at), cur = SCENES[i], next = SCENES[i + 1];
+    const lt = t - cur.at, push = 1 + lt * .01;
+    bx.save(); bx.translate(W / 2, H / 2); bx.scale(push, push); bx.translate(-W / 2, -H / 2);
+    drawScene(cur, lt); bx.restore();
+    if (next && t > next.at - WIPE) {
+      const p = next.wipe === 'scan' ? eIOExpo(prog(t, next.at - WIPE, next.at)) : prog(t, next.at - WIPE, next.at);
+      bx.save(); wipeClip(next.wipe, p); bx.clip(); drawScene(next, t - next.at); bx.restore();
+      if (next.wipe === 'scan') { const y = H * p;
+        const g = bx.createLinearGradient(0, y - 60, 0, y); g.addColorStop(0, 'rgba(154,212,42,0)'); g.addColorStop(1, 'rgba(216,255,138,.8)');
+        bx.fillStyle = g; bx.fillRect(0, y - 60, W, 60); bx.fillStyle = '#e8ffb0'; bx.fillRect(0, y - 2, W, 3); }
+    }
+    timeline(t);
+    const d = dst.getContext('2d');
+    d.setTransform(1, 0, 0, 1, 0, 0); d.globalCompositeOperation = 'source-over'; d.globalAlpha = 1;
+    d.drawImage(buf, 0, 0);
+    d.setTransform(S, 0, 0, S, 0, 0);
+    d.globalCompositeOperation = 'overlay'; d.globalAlpha = .05;
+    d.save(); d.translate(-hash(Math.floor(t * 30)) * 256, -hash(Math.floor(t * 30) + 1) * 256);
+    d.fillStyle = d.createPattern(grain, 'repeat'); d.fillRect(0, 0, W + 256, H + 256); d.restore();
+    d.globalCompositeOperation = 'source-over'; d.globalAlpha = 1;
+    const v = d.createRadialGradient(W / 2, H / 2, H * .45, W / 2, H / 2, H * 1.15);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.45)'); d.fillStyle = v; d.fillRect(0, 0, W, H);
+  }
+
+  function renderBlurred(t, fps = 60, samples = 4) {
+    if (samples <= 1) { frame(t, cv); return; }
+    for (let i = 0; i < samples; i++) {
+      frame(t + (i / samples) * (.5 / fps), acc);
+      out.setTransform(1, 0, 0, 1, 0, 0); out.globalAlpha = 1 / (i + 1); out.drawImage(acc, 0, 0);
+    }
+    out.globalAlpha = 1;
+  }
+  window.renderFrame = renderBlurred;
+  window.EDIT_DURATION = DURATION;
+  window.fontsReady = Promise.all(['800 40px "Display"', '500 40px "Display"', '400 40px "Sans"', '600 40px "Sans"', '500 40px "Mono"']
+    .map(f => document.fonts.load(f, 'AaĞğŞşİı'))).then(() => document.fonts.ready);
+
+  // ============ playback ============
+  if (params.has('capture')) { document.body.classList.add('capture'); return; }
+  const aud = document.getElementById('aud'), playBtn = document.getElementById('play');
+  const scrub = document.getElementById('scrub'), tc = document.getElementById('tc'), start = document.getElementById('start');
+  let playing = false, hasAudio = true, t0 = 0, cur = 0;
+  aud.addEventListener('error', () => { hasAudio = false; });
+  const now = () => hasAudio && !aud.paused ? aud.currentTime : (performance.now() - t0) / 1000;
+  function play() { playing = true; playBtn.textContent = 'Duraklat'; if (cur >= DURATION - .05) cur = 0;
+    t0 = performance.now() - cur * 1000; if (hasAudio) { aud.currentTime = cur; aud.play().catch(() => { hasAudio = false; }); } }
+  function pause() { playing = false; playBtn.textContent = 'Oynat'; aud.pause(); }
+  start.onclick = () => { start.remove(); play(); };
+  playBtn.onclick = () => playing ? pause() : play();
+  scrub.oninput = () => { cur = scrub.value / 1000; if (playing) play(); else window.fontsReady.then(() => renderBlurred(cur, 60, 1)); };
+  addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); start.isConnected ? start.click() : playBtn.click(); } });
+  window.fontsReady.then(() => renderBlurred(0, 60, 1));
+  (function tick() {
+    if (playing) {
+      cur = now();
+      if (cur >= DURATION) { cur = 0; play(); }
+      renderBlurred(cur, 60, 1);
+      scrub.value = Math.round(cur * 1000); tc.textContent = cur.toFixed(2);
+    }
+    requestAnimationFrame(tick);
+  })();
+})();
+</script>
+</body>
+</html>
